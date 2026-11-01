@@ -46,6 +46,26 @@ export interface ThemeClasses {
   css: string;
 }
 
+/**
+ * The dark theme's colour for each of the light theme's (highlight-theme.json stays the light theme, shared with the
+ * Mac app): the same hues, lighter, for the charcoal code background. A colour missing here keeps its light value.
+ */
+const DARK: Record<string, string> = {
+  "#1d1e22": "#e8e8ea",
+  "#7a7b82": "#8b8c94",
+  "#296d9a": "#6aaedb",
+  "#3f7d4e": "#86c495",
+  "#2f7a6e": "#6cc0b2",
+  "#8a5a14": "#dba65c",
+  "#5b4fa8": "#ab9ef2",
+  "#1f6f7a": "#66bfcd",
+  "#4a5560": "#a9b4bf",
+  "#62626a": "#9d9da6",
+  "#9a5b1e": "#dd9d62",
+  "#e9f3ec": "#1d2b22",
+  "#f7efe5": "#2e2519",
+};
+
 const isColor = (c: unknown): c is string => typeof c === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c);
 
 /** Classes and CSS for `names` (token names by id). */
@@ -71,6 +91,8 @@ export function themeClasses(theme: CodeTheme, names: readonly string[]): ThemeC
         cls = "hk" + styles.size;
         styles.set(decl, cls);
         css += `.mde .ln.in-code .${cls}{${decl}}\n`;
+        const dark = isColor(s?.color) ? DARK[s.color.toLowerCase()] : undefined;
+        if (dark) css += `:root[data-theme="dark"] .mde .ln.in-code .${cls}{color:${dark}}\n`;
       }
     }
     token.push(cls);
@@ -82,6 +104,8 @@ export function themeClasses(theme: CodeTheme, names: readonly string[]): ThemeC
         lc = "hkl" + bgs.size;
         bgs.set(bg, lc);
         css += `.mde .ln.in-code.${lc}{background:${bg}}\n`;
+        const dark = DARK[bg.toLowerCase()];
+        if (dark) css += `:root[data-theme="dark"] .mde .ln.in-code.${lc}{background:${dark}}\n`;
       }
     }
     line.push(lc);

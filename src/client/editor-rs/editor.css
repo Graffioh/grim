@@ -56,6 +56,26 @@
   position: relative;
   background: var(--mde-bg);
 }
+/* Dark theme (theme.ts sets <html data-theme>). The Mac app has no dark twin yet. */
+:root[data-theme="dark"] .mde {
+  --mde-text: #d4d4d8;
+  --mde-heading: #f0f0f2;
+  --mde-text-light: #a8a8b0;
+  --mde-accent: #f0f0f2;
+  --mde-link: #6aaedb;
+  --mde-marker: #8b8b93;
+  --mde-bg: #17181b;
+  --mde-bg2: #2a2b30;
+  --mde-code-bg: #212227;
+  --mde-stroke: #3a3b41;
+  --mde-quote: #44454c;
+  --mde-selection: rgba(106, 174, 219, 0.3);
+  --mde-highlight: rgba(245, 197, 66, 0.22);
+  --mde-checked: #8b8b93;
+}
+:root[data-theme="dark"] .mde .chip { color: #6b6b74; }
+:root[data-theme="dark"] .mde .chip:hover { color: #c4c4ca; }
+:root[data-theme="dark"] .mde .ln-table-head .tcell { border-bottom-color: #4a4b52; }
 
 .mde-content {
   box-sizing: border-box;
@@ -499,3 +519,51 @@
 .mde-unsaved details { margin: 8px 0 0; font: 13px/1.4 var(--mde-ui-font); color: var(--mde-text); }
 .mde-unsaved summary { cursor: pointer; }
 .mde-unsaved .mde-fallback-text { margin-top: 8px; max-height: 40vh; overflow: auto; }
+:root[data-theme="dark"] .mde .t.link { text-decoration-color: rgba(106, 174, 219, 0.5); }
+:root[data-theme="dark"] .mde .mde-author { color: #6b6b74; }
+
+/* Vim mode (vim-view.ts): a block cursor instead of the caret in normal and Visual mode, and the mode line. */
+.mde .mde-content.vim-block { caret-color: transparent; }
+.mde-vim-caret {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  /* a solid block that inverts what's under it (dark on the light paper, light on the dark) */
+  background: #fff;
+  mix-blend-mode: difference;
+  border-radius: 1px;
+}
+.mde-vim-bar {
+  position: fixed;
+  right: 16px;
+  bottom: 12px;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--line, rgba(24, 24, 27, 0.12));
+  border-radius: 6px;
+  background: var(--paper-2, #f4f4f5);
+  color: var(--muted, #62626a);
+  font: 500 11px/18px var(--font-mono, ui-monospace, monospace);
+  pointer-events: none;
+}
+.mde-vim-bar.show { display: flex; }
+.mde-vim-mode { font-weight: 700; letter-spacing: 0.04em; color: var(--ink, #1d1e22); }
+.mde-vim-bar.insert .mde-vim-mode { color: var(--blue, #296d9a); }
+.mde-vim-keys:empty { display: none; }
+.mde-vim-input {
+  width: 220px;
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  color: var(--ink, #1d1e22);
+  font: inherit;
+  pointer-events: auto;
+}
+.mde-vim-bar:has(.mde-vim-input) { pointer-events: auto; }
+/* Dark theme: inline code stands out from the page (a lighter pill, brighter text than the body's grey) */
+:root[data-theme="dark"] .mde :is(.t.code, .mk.code.rv) { background: #30323a; }
+:root[data-theme="dark"] .mde .t.code { color: #f2f2f4; }

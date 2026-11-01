@@ -101,6 +101,31 @@
   --modal-head-tracking: -0.01em;
 }
 
+/* Dark theme (theme.ts sets <html data-theme>): the same tokens, ink on charcoal. The editor's are in editor.css. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #17181b;
+  --paper-2: #1e1f23;
+  --paper-3: #26272c;
+  --tint-hover: #2a2b30;
+  --tint-active: #323339;
+  --code-bg: #222327;
+  --ink: #e8e8ea;
+  --ink-2: #c4c4ca;
+  --muted: #9d9da6;
+  --grey-2: #9d9da6;
+  --grey: #6b6b74;
+  --line: rgba(255, 255, 255, 0.12);
+  --line-soft: rgba(255, 255, 255, 0.07);
+  --blue: #6aaedb;
+  --warn: #e0b030;
+  --red: #e5534b;
+  --red-hover: #f06a62;
+  --warn-soft: rgba(245, 197, 66, 0.2);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.45);
+  --shadow-modal: 0 2px 8px rgba(0, 0, 0, 0.3), 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
 /* San Francisco: its own size-specific tracking (Text below 20pt, Display above), none of Inter's tuning. */
 :root.sysfont {
   --label-tracking: 0;
@@ -2711,3 +2736,32 @@ input[type="radio"] {
   width: fit-content;
   max-width: calc(100% - 32px);
 }
+
+/* Dark theme: the colours above that aren't tokens. */
+:root[data-theme="dark"] .sb-tree,
+:root[data-theme="dark"] .doc-body,
+:root[data-theme="dark"] .history-body,
+:root[data-theme="dark"] .modal {
+  scrollbar-color: #3a3b41 transparent;
+}
+:root[data-theme="dark"] .btn-primary:hover:not(:disabled),
+:root[data-theme="dark"] .btn-danger:hover:not(:disabled) {
+  border-color: #fff;
+  background: #fff;
+}
+:root[data-theme="dark"] .file-item:not(.active) .row-menu,
+:root[data-theme="dark"] .crumb-sep {
+  color: #6b6b74;
+}
+:root[data-theme="dark"] .dl-add { background: rgba(106, 174, 219, 0.12); }
+:root[data-theme="dark"] .dl-del { background: rgba(255, 255, 255, 0.05); box-shadow: inset 2px 0 0 #6b6b74; }
+:root[data-theme="dark"] .toast-action { background: rgba(0, 0, 0, 0.1); }
+:root[data-theme="dark"] .toast-action:hover { background: rgba(0, 0, 0, 0.18); }
+:root[data-theme="dark"] .btn-mac,
+:root[data-theme="dark"] .btn-mac:hover:not(:disabled) { background: #26272c; }
+:root[data-theme="dark"] .copyright { color: #7a7b82; }
+:root[data-theme="dark"] .copyright .signature path { fill: #26272c; }
+:root[data-theme="dark"] .btn:hover:not(:disabled),
+:root[data-theme="dark"] .share-code-copy:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.2); }
+:root[data-theme="dark"] .sb-search:hover { border-color: rgba(255, 255, 255, 0.24); }
+:root[data-theme="dark"] .modal::backdrop { background: rgba(0, 0, 0, 0.55); }

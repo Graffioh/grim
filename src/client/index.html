@@ -28,7 +28,7 @@
     <meta name="twitter:image" content="https://grimnotes.app/og/twitter-card.png" />
     <meta name="twitter:image:alt" content="Grim: a place to think with your agents. A note being edited live, with an agent's cursor." />
     <!--/share-meta-->
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
@@ -43,6 +43,7 @@
       #splash span { font: 600 11px/1 -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Arial, sans-serif; letter-spacing: 0.32em; padding-left: 0.32em; color: #a3a3aa; opacity: 0; animation: splash-in 0.4s ease-out 0.15s forwards; }
       @keyframes splash-in { to { opacity: 1; } }
       @media (prefers-reduced-motion: reduce) { #splash span { animation-duration: 0s; } }
+      @media (prefers-color-scheme: dark) { html, body, #splash { background: #17181b; } #splash span { color: #6b6b74; } }
     </style>
   </head>
   <body>

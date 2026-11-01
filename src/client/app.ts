@@ -10,6 +10,8 @@ import { forgetImageSizes } from "./editor-rs/render.ts";
 import { api, ApiError, rawUrl, setGuest, type AppEvent, type Me, type PresenceUserInfo, type Workspace, type ServerInfo, type Tree, type WorkspaceItem } from "./api.ts";
 import { anonIdentity, setAnonName, signInDialog, signInDirect, type AnonIdentity, type SignInReason } from "./signin.ts";
 import { renderScratch } from "./scratch.ts";
+import { applyTheme, setThemePref, themePref, watchTheme, type ThemePref } from "./theme.ts";
+import { setVimEnabled, vimEnabled } from "./editor-rs/vim.ts";
 import { HistoryPanel } from "./history.ts";
 
 import { confirmDialog, copyText, deleteAccountDialog, promptDialog, shareDialog, welcomeDialog } from "./dialogs.ts";
@@ -336,6 +338,8 @@ function renderShell() {
     showMenu(moreBtn, noteMenu(), { keepOrder: true, alignRight: true });
   });
   setShowAuthors(showAuthors());
+  applyTheme();
+  watchTheme();
 
   treeEl.addEventListener("keydown", onTreeKey);
   document.addEventListener("focusin", (e) => {
@@ -535,14 +539,30 @@ function renderAccount() {
 
 /** The account row's menu, opening upward: my email, Change name…, Sign out. */
 function openAccountMenu() {
-  if (noSignIn) return showMenu(accountBtn, [{ section: `${location.host} · No sign-in` }, { label: "Change name…", run: changeName }], { keepOrder: true, above: true, className: "account-menu" });
+  if (noSignIn) return showMenu(accountBtn, [{ section: `${location.host} · No sign-in` }, { label: "Change name…", run: changeName }, ...prefItems()], { keepOrder: true, above: true, className: "account-menu" });
   showMenu(accountBtn, [
     myEmail() ? { section: myEmail() } : null,
     { label: "Change name…", run: changeName },
     { label: "Sign out", run: logout },
+    ...prefItems(),
     "sep",
     { label: "Delete account…", danger: true, run: deleteAccount },
   ], { keepOrder: true, above: true, className: "account-menu" });
+}
+
+/** The account menu's per-browser preferences: Theme (System, Light, Dark) and the editor's Vim mode. */
+function prefItems(): MenuItem[] {
+  const pref = themePref();
+  const theme = (label: string, p: ThemePref): MenuItem => ({ label, checked: pref === p, run: () => setThemePref(p) });
+  return [
+    "sep",
+    { section: "Theme" },
+    theme("System", "system"),
+    theme("Light", "light"),
+    theme("Dark", "dark"),
+    "sep",
+    { label: "Vim mode", checked: vimEnabled(), run: () => setVimEnabled(!vimEnabled()) },
+  ];
 }
 
 /** The account is being deleted: the page is about to go home, so events and routing stop here. */

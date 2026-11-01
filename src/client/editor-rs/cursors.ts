@@ -15,6 +15,8 @@ export interface CursorHost {
   rangeRects(from: number, to: number): DOMRect[];
   /** The visible client x range of the scrolling block (table, code block) holding `pos`, if any. */
   clipX?(pos: number): [number, number] | null;
+  /** Drawn with the remote cursors (same triggers): Vim's block cursor. */
+  drawOwnCursor?(): void;
 }
 
 /** A remote cursor ready to draw: offsets into the text, a valid color, a name (others' only, not our own user's). */
@@ -143,6 +145,7 @@ export class RemoteCursors {
       carets.push({ id, left: c.left - base.left, top: c.top - base.top, bottom: c.bottom - base.top, label });
     }
     overlay.replaceChildren(frag);
+    v.drawOwnCursor?.();
     // a label that would run past the pane's right edge goes on the caret's left
     for (const c of carets) if (c.label.getBoundingClientRect().right > base.right) c.label.classList.add("flip");
     this.carets = carets;

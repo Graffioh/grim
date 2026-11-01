@@ -9,6 +9,7 @@ import type { RustEditorView } from "./view.ts";
 import { crashSafe } from "./guard.ts";
 import { linkDest, type LineLink } from "./links.ts";
 import { lineDivOf, lineIndexOf } from "./blocks.ts";
+import { VimView } from "./vim-view.ts";
 
 /** How far (px) the pointer may move during a click before it becomes a drag. */
 const DRAG_SLOP = 4;
@@ -78,6 +79,8 @@ export function foldKey(e: KeyLike & { code?: string }, mac = isMac): { key: str
 export function attachRustInput(v: RustEditorView): () => void {
   const root = v.root;
   const engine = v.engine;
+  const vim = new VimView(v);
+  v.vim = vim;
   const layout = v.layout;
   let pointerDown = false;
   /** A single click's button held down: the pointer position, and whether it moved far enough to drag. */
@@ -181,6 +184,7 @@ export function attachRustInput(v: RustEditorView): () => void {
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.isComposing || v.composing || e.keyCode === 229) return;
+    if (vim.onKeyDown(e)) return;
     // Cmd-Enter (elsewhere Ctrl-Enter) with the caret in a link opens it
     if (e.key === "Enter" && !e.shiftKey && !e.altKey && (isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)) {
       const link = v.linkAtCaret();
@@ -437,6 +441,8 @@ export function attachRustInput(v: RustEditorView): () => void {
   ].map(([t, type, fn]) => [t as EventTarget, type as string, crashSafe(fn as EventListener)]);
   for (const [t, type, fn] of listeners) t.addEventListener(type, fn);
   return () => {
+    vim.destroy();
+    v.vim = null;
     endDrag();
     endPress();
     for (const [t, type, fn] of listeners) t.removeEventListener(type, fn);

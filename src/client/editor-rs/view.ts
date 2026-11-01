@@ -6,6 +6,7 @@
 // - local (home page example, tests, parity rig): a plain engine on a text. An optional `LocalSync`
 //   (test harnesses: a Y.Text mirror) gets the engine's edits and feeds remote edits back through `applyRemote`.
 
+import type { VimView } from "./vim-view.ts";
 import type { ImageResolver } from "./images.ts";
 import { ImageDrops, type ImageUploader } from "./drop.ts";
 import { rawToDom, domToRaw, lineAt } from "./offsets.ts";
@@ -119,6 +120,8 @@ export class RustEditorView implements CursorHost, CollabView, CodeHost {
   private authors: AuthorGutter | null = null;
   /** The patch being applied came from the others (remotePatch). */
   private remoteApply = false;
+  /** Vim mode's key handling and block cursor (input.ts makes it; it stays idle while the setting is off). */
+  vim: VimView | null = null;
 
   constructor(
     readonly container: HTMLElement,
@@ -569,6 +572,15 @@ export class RustEditorView implements CursorHost, CollabView, CodeHost {
   }
 
   cursorsChanged(): void {
+    this.cursors.schedule();
+  }
+
+  drawOwnCursor(): void {
+    this.vim?.draw();
+  }
+
+  /** Redraw the overlays (remote cursors, Vim's cursor) on the next frame. */
+  scheduleOverlays(): void {
     this.cursors.schedule();
   }
 
