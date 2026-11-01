@@ -7,6 +7,7 @@
 //   (test harnesses: a Y.Text mirror) gets the engine's edits and feeds remote edits back through `applyRemote`.
 
 import type { VimView } from "./vim-view.ts";
+import { RecentEdits } from "./recent.ts";
 import type { ImageResolver } from "./images.ts";
 import { ImageDrops, type ImageUploader } from "./drop.ts";
 import { rawToDom, domToRaw, lineAt } from "./offsets.ts";
@@ -122,6 +123,8 @@ export class RustEditorView implements CursorHost, CollabView, CodeHost {
   private remoteApply = false;
   /** Vim mode's key handling and block cursor (input.ts makes it; it stays idle while the setting is off). */
   vim: VimView | null = null;
+  /** The others' recent edits, tinted for a few minutes. */
+  private readonly recent = new RecentEdits(this);
 
   constructor(
     readonly container: HTMLElement,
@@ -232,6 +235,7 @@ export class RustEditorView implements CursorHost, CollabView, CodeHost {
     // (local documents have no authors, so their LocalSync edits never get here)
     if (edits?.length && !opts.remote) this.authors?.textChanged(before, this.doc.text, !this.remoteApply);
     if (edits?.length) this.drops?.mapThrough(edits);
+    if (edits?.length) this.recent.edited(edits, !!opts.remote || this.remoteApply);
     if (p.lines) this.splice(p.lines);
     if (!this.updateSpans()) {
       // the engine and the shell disagree about the text: resync from the engine
@@ -577,6 +581,7 @@ export class RustEditorView implements CursorHost, CollabView, CodeHost {
 
   drawOwnCursor(): void {
     this.vim?.draw();
+    this.recent.draw();
   }
 
   /** Redraw the overlays (remote cursors, Vim's cursor) on the next frame. */
@@ -837,6 +842,7 @@ export class RustEditorView implements CursorHost, CollabView, CodeHost {
     if (this._destroyed) return;
     this._destroyed = true;
     this.detachInput();
+    this.recent.destroy();
     this.drops?.destroy();
     try {
       // a collab engine outlives the view: don't leave it composing

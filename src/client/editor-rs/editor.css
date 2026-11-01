@@ -567,3 +567,22 @@
 /* Dark theme: inline code stands out from the page (a lighter pill, brighter text than the body's grey) */
 :root[data-theme="dark"] .mde :is(.t.code, .mk.code.rv) { background: #30323a; }
 :root[data-theme="dark"] .mde .t.code { color: #f2f2f4; }
+
+/* The others' recent edits (recent.ts): a light tint for a few minutes, over the line's own background (code) */
+.mde .ln.mde-recent {
+  background-image: linear-gradient(rgba(41, 109, 154, 0.09), rgba(41, 109, 154, 0.09));
+  box-shadow: -6px 0 0 rgba(41, 109, 154, 0.09), -8px 0 0 rgba(41, 109, 154, 0.45);
+  transition: box-shadow 1s, background-image 1s;
+}
+.mde .ln.mde-recent.mde-recent-fading {
+  background-image: linear-gradient(rgba(41, 109, 154, 0.04), rgba(41, 109, 154, 0.04));
+  box-shadow: -6px 0 0 rgba(41, 109, 154, 0.04), -8px 0 0 rgba(41, 109, 154, 0.2);
+}
+:root[data-theme="dark"] .mde .ln.mde-recent {
+  background-image: linear-gradient(rgba(106, 174, 219, 0.12), rgba(106, 174, 219, 0.12));
+  box-shadow: -6px 0 0 rgba(106, 174, 219, 0.12), -8px 0 0 rgba(106, 174, 219, 0.55);
+}
+:root[data-theme="dark"] .mde .ln.mde-recent.mde-recent-fading {
+  background-image: linear-gradient(rgba(106, 174, 219, 0.05), rgba(106, 174, 219, 0.05));
+  box-shadow: -6px 0 0 rgba(106, 174, 219, 0.05), -8px 0 0 rgba(106, 174, 219, 0.25);
+}
