@@ -18,6 +18,8 @@ import type { CollabEngine } from "../../../src/client/editor-rs/types.ts";
 import { FakeRoom } from "../browser/room.ts";
 
 installDom();
+// these tests are about live editing: edits go out at once (Save manually off; its own tests are in drafts.test.ts)
+localStorage.setItem("grimoire.manualSave.v1", "0");
 
 const pkg = new URL("../../../src/client/editor-rs/pkg/", import.meta.url);
 let factory: CollabFactory | null = null;

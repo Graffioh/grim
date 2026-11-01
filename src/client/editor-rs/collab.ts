@@ -7,8 +7,21 @@
 // With `workspace` (protocol v2, docs/07-workspace-socket.md) the note is a channel on the workspace's socket
 // instead of its own WebSocket: the client re-opens it after a drop or `end 1013`, and the frames are the same. A
 // hidden channel (a prefetch) sends no awareness: our state is cleared when it's hidden and re-announced when shown.
+//
+// Save manually (unsent.ts manualSave, on by default): our edits stay here until saved. The sync frames carrying them
+// (updates, and the step2 answering the server's step1, which would carry them after a reconnect) are held back;
+// everything else (step1, awareness, control) goes out as usual, so the others' edits keep arriving. save() sends
+// what's held as one update (Yjs merges it with what the others wrote meanwhile) and asks the server to commit; it
+// runs on ⌘S / :w only. A shadow Yjs doc follows the server's document (its
+// frames, and what we send), so a draft still unsaved when the connection ends is kept as base → text plus the held
+// update (keepDraft) and merged back as unsaved edits when the note opens again (recover.ts).
 
+import * as Y from "yjs";
+import * as ysync from "y-protocols/sync";
+import * as encoding from "lib0/encoding";
+import * as decoding from "lib0/decoding";
 import { Emitter } from "../emitter.ts";
+import { draftsChanged, keepDraft, manualSave, MANUAL_SAVE_EVENT } from "./unsent.ts";
 import { crashSafe, guardEngine, isEngineCrash } from "./guard.ts";
 import type { UnsentEdits } from "./recover.ts";
 import type { CollabEngine, Patch, Received } from "./types.ts";
@@ -46,6 +59,8 @@ export type CollabEvents = {
   crashed: [unsent: Uint8Array | null];
   recovered: [ok: boolean, changed: boolean];
   blame: [];
+  /** Unsaved edits appeared (true) or were saved (false). */
+  drafts: [boolean];
 };
 
 /** One author of the room's `{t:"blame"}` message (docs/05-v1-architecture.md, "Line authors"). */
@@ -112,7 +127,9 @@ export interface RustCollabOptions {
 }
 
 const OPEN = 1;
+const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
+
 const MSG_CONTROL = 2;
 
 /** A random client id below 2^32 (the server reserves larger ids for agents). */
@@ -160,6 +177,21 @@ export class RustCollab extends Emitter<CollabEvents> {
   private awShown = false;
   /** The state vector of the engine's last sync step 1 (sent on every hello): what a re-open asks the server from. */
   private lastSv: Uint8Array | null = null;
+  /** Every live connection (pagehide keeps their drafts). */
+  static readonly live = new Set<RustCollab>();
+  /** Edits wait for save() (the setting, followed live). */
+  manualSave = manualSave();
+  /** Our edits held back, as Yjs updates (oldest first). */
+  private held: Uint8Array[] = [];
+  /** The server's document as we know it: its sync frames and what we sent (not what's held). */
+  private readonly shadow = new Y.Doc();
+  /** save() was asked while the connection was down: done once it's synced again. */
+  private saveWanted = false;
+  private readonly onManualSave = () => {
+    const on = manualSave();
+    if (!on) this.save();
+    this.manualSave = on;
+  };
 
   constructor(
     factory: CollabFactory,
@@ -182,7 +214,62 @@ export class RustCollab extends Emitter<CollabEvents> {
     this.workspace = opts.workspace ?? null;
     this.hidden = !!opts.hidden;
     window.addEventListener("online", this.onOnline);
+    window.addEventListener(MANUAL_SAVE_EVENT, this.onManualSave);
+    RustCollab.live.add(this);
     this.connect();
+  }
+
+  /** Edits not saved yet (held back, and the text differs from the server's). */
+  get unsaved(): boolean {
+    if (!this.held.length || this.stopped) return false;
+    try {
+      return this.engine.text() !== this.shadow.getText("md").toString();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Send the held edits (one update) and ask the server to commit now. Down: done once synced again (a reconnect's
+   * step2, also held, brings them back too).
+   */
+  save(): void {
+    if (this.stopped) return;
+    if (!this.held.length) return this.flush();
+    if (!this.canSend()) {
+      this.saveWanted = true;
+      return;
+    }
+    this.saveWanted = false;
+    const update = Y.mergeUpdates(this.held);
+    this.held = [];
+    this.toShadow(update);
+    this.transmit([updateFrame(update)]);
+    this.flush();
+    keepDraft(this.repo, this.path, null);
+    this.emit("drafts", false);
+  }
+
+  /** The note as the server has it: without the held edits (what Save would change is this → the editor's text). */
+  get savedText(): string {
+    return this.shadow.getText("md").toString();
+  }
+
+  /** Holding edits not sent yet (unsaved, or undone back to the server's text). */
+  get holding(): boolean {
+    return this.held.length > 0 && !this.stopped;
+  }
+
+  /** Keep the unsaved draft for the next time the note opens (the connection is ending, or the page may be). */
+  keepDrafts(): void {
+    if (!this.held.length || this.crashed || this.trapped) return;
+    try {
+      const text = this.engine.text();
+      const base = this.shadow.getText("md").toString();
+      keepDraft(this.repo, this.path, text === base ? null : { generation: this.generation, base, text, update: Y.mergeUpdates(this.held) });
+    } catch (err) {
+      console.warn("collab: couldn't keep the draft", err);
+    }
   }
 
   /** Still connected or reconnecting (not reset, closed, crashed or destroyed). */
@@ -254,6 +341,13 @@ export class RustCollab extends Emitter<CollabEvents> {
 
   destroy(): void {
     if (this.destroyed) return;
+    // an unsaved draft is kept for the next time the note opens (not sent)
+    if (!this.stopped) this.keepDrafts();
+    const had = this.held.length > 0;
+    this.held = [];
+    RustCollab.live.delete(this);
+    if (had) draftsChanged();
+    window.removeEventListener(MANUAL_SAVE_EVENT, this.onManualSave);
     this.destroyed = true;
     // tell the others we left while the socket is still open
     if (!this.stopped) {
@@ -295,6 +389,8 @@ export class RustCollab extends Emitter<CollabEvents> {
       unsent = this.factory.recover?.(this.id) ?? null;
     } catch {}
     if (this.trapped) this.factory.evict?.();
+    // the crash's kept edits (every local edit of the session) include the held ones
+    this.held = [];
     this.stop();
     this.closeSocket();
     // not from inside the engine call that trapped
@@ -429,6 +525,7 @@ export class RustCollab extends Emitter<CollabEvents> {
   private onFrame(data: Uint8Array): void {
     // the server's document, rebuilt alongside the engine's until the kept edits are merged
     this.recover?.feed(data);
+    if (data[0] === MSG_SYNC) this.feedShadow(data);
     if (data[0] === MSG_CONTROL) this.readControl(data);
     let r: Received;
     try {
@@ -463,6 +560,7 @@ export class RustCollab extends Emitter<CollabEvents> {
             if (this.recover) this.mergeRecovered();
             this.emit("synced");
           }
+          if (this.saveWanted) queueMicrotask(() => this.save());
           break;
         case "saveState":
           this.setSaveState(n.saveState);
@@ -471,7 +569,10 @@ export class RustCollab extends Emitter<CollabEvents> {
           this.emit("external", n.commit);
           break;
         case "reset":
-          // the room was recreated, or read-only would drop our offline edits: the app starts over
+          // the room was recreated, or read-only would drop our offline edits: the app starts over (a draft is
+          // kept, and merged into the new document by text)
+          this.keepDrafts();
+          this.held = [];
           this.stop();
           this.closeSocket();
           this.emit("reset");
@@ -578,7 +679,62 @@ export class RustCollab extends Emitter<CollabEvents> {
     }
   }
 
+  /** Frames from the engine: with manual save, the ones carrying our edits are held back. */
   private send(frames: Uint8Array[]): void {
+    if (!frames.length) return;
+    const out: Uint8Array[] = [];
+    for (const f of frames) {
+      if (f[0] === MSG_SYNC && (f[1] === 1 || f[1] === 2)) {
+        const update = readVarBuf(f, 2);
+        // (an empty update, [0, 0], carries nothing)
+        if (update && update.length > 2) {
+          if (this.manualSave && !this.readOnly) {
+            this.hold(update);
+            continue;
+          }
+          this.toShadow(update);
+        }
+      }
+      out.push(f);
+    }
+    this.transmit(out);
+  }
+
+  private hold(update: Uint8Array): void {
+    const first = !this.held.length;
+    this.held.push(update);
+    if (first)
+      queueMicrotask(() => {
+        if (this.destroyed) return;
+        this.emit("drafts", true);
+        draftsChanged();
+      });
+  }
+
+  private canSend(): boolean {
+    if (this.workspace) return !!this.chan && this.chan.ch !== null;
+    return !!this.ws && this.ws.readyState === OPEN;
+  }
+
+  private feedShadow(frame: Uint8Array): void {
+    try {
+      const dec = decoding.createDecoder(frame);
+      decoding.readVarUint(dec);
+      ysync.readSyncMessage(dec, encoding.createEncoder(), this.shadow, "server");
+    } catch (err) {
+      console.warn("collab: shadow: bad sync frame", err);
+    }
+  }
+
+  private toShadow(update: Uint8Array): void {
+    try {
+      Y.applyUpdate(this.shadow, update, "self");
+    } catch (err) {
+      console.warn("collab: shadow: update doesn't apply", err);
+    }
+  }
+
+  private transmit(frames: Uint8Array[]): void {
     if (!frames.length) return;
     if (this.workspace) return this.sendChannel(frames);
     const ws = this.ws;
@@ -666,4 +822,13 @@ export function parseBlame(msg: { authors?: unknown; lines?: unknown }): Blame |
   }
   const lines = (msg.lines as unknown[]).map((v) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) < authors.length ? (v as number) : -1));
   return { authors, lines };
+}
+
+/** A sync update frame ([0, 2, update]). */
+function updateFrame(update: Uint8Array): Uint8Array {
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_SYNC);
+  encoding.writeVarUint(enc, 2);
+  encoding.writeVarUint8Array(enc, update);
+  return encoding.toUint8Array(enc);
 }

@@ -4,8 +4,9 @@ import { mountEditor, repoImages, type EditorHandle, type LinkTarget } from "./e
 import { loadCollabEngine, preloadWasm } from "./editor-rs/engine.ts";
 import { warmCode } from "./editor-rs/code.ts";
 import { RustCollab, type ClosedReason, type CollabEvents } from "./editor-rs/collab.ts";
+import type { RustEditorView } from "./editor-rs/view.ts";
 import { COULDNT_START, NOT_KEPT, STOPPED, showFallback, unsavedActions, unsavedBanner } from "./editor-rs/fallback.ts";
-import { forgetAllUnsent, forgetUnsent, keepUnsent, keptUnsent, type KeptEdits } from "./editor-rs/unsent.ts";
+import { DRAFTS_EVENT, draftNotes, forgetAllUnsent, forgetUnsent, keepDraft, keepUnsent, keptDraft, keptUnsent, manualSave, setManualSave, takeDraft, type KeptEdits } from "./editor-rs/unsent.ts";
 import { forgetImageSizes } from "./editor-rs/render.ts";
 import { api, ApiError, rawUrl, setGuest, type AppEvent, type Me, type PresenceUserInfo, type Workspace, type ServerInfo, type Tree, type WorkspaceItem } from "./api.ts";
 import { anonIdentity, setAnonName, signInDialog, signInDirect, type AnonIdentity, type SignInReason } from "./signin.ts";
@@ -13,6 +14,7 @@ import { renderScratch } from "./scratch.ts";
 import { applyTheme, setThemePref, themePref, watchTheme, type ThemePref } from "./theme.ts";
 import { setVimEnabled, vimEnabled } from "./editor-rs/vim.ts";
 import { HistoryPanel } from "./history.ts";
+import { diffLines } from "diff";
 
 import { confirmDialog, copyText, deleteAccountDialog, promptDialog, shareDialog, welcomeDialog } from "./dialogs.ts";
 import { openFileSearch } from "./filesearch.ts";
@@ -377,7 +379,11 @@ function renderShell() {
 
   document.addEventListener("keydown", (e) => {
     // Notes save themselves; Cmd/Ctrl-S just shouldn't open the browser's "Save page" dialog.
-    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") e.preventDefault();
+    // Cmd/Ctrl-S saves the open note's unsaved edits (Save manually), and never opens the browser's "Save page".
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      saveNote();
+    }
     // Ctrl+P (on every platform; not the browser's Print): Search files.
     if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === "KeyP") {
       e.preventDefault();
@@ -397,11 +403,36 @@ function renderShell() {
     }
   }, true);
   document.addEventListener("keydown", bufferTypedAhead, true);
+  // unsaved drafts outlive the page: kept here, merged back when their note opens again
+  window.addEventListener("pagehide", () => {
+    for (const c of RustCollab.live) c.keepDrafts();
+  });
+  // back from the back/forward cache: this tab holds those drafts again, so the copies kept above must go (another
+  // tab restoring one would save it a second time)
+  window.addEventListener("pageshow", (e) => {
+    if (!e.persisted) return;
+    for (const c of RustCollab.live) if (c.holding) keepDraft(c.repo, c.path, null);
+  });
+  // the sidebar marks notes with unsaved edits (this tab's, and drafts kept in this browser)
+  window.addEventListener(DRAFTS_EVENT, () => {
+    unsavedCache = null;
+    renderTree();
+  });
+  window.addEventListener("storage", (e) => {
+    if (e.key === null || e.key.startsWith("grimoire.draft:")) {
+      unsavedCache = null;
+      renderTree();
+    }
+  });
   // a click elsewhere: whatever was typed ahead wasn't meant for the new note anymore
   document.addEventListener("mousedown", (e) => {
     if (typedAhead && !(e.target as HTMLElement).closest?.(".menu")) typedAhead.until = 0;
   }, true);
-  document.addEventListener("click", () => closeMenu());
+  document.addEventListener("click", () => {
+    closeMenu();
+    closeChanges();
+  });
+  document.addEventListener("keydown", (e) => e.key === "Escape" && changesEl && closeChanges());
   window.addEventListener("blur", () => closeMenu());
 }
 
@@ -562,6 +593,7 @@ function prefItems(): MenuItem[] {
     theme("Dark", "dark"),
     "sep",
     { label: "Vim mode", checked: vimEnabled(), run: () => setVimEnabled(!vimEnabled()) },
+    { label: `Save manually (${IS_MAC ? "⌘" : "Ctrl-"}S)`, checked: manualSave(), run: () => setManualSave(!manualSave()) },
   ];
 }
 
@@ -1352,8 +1384,18 @@ function renderFolder(repo: Workspace, folder: Folder, level: number): HTMLEleme
   return ul;
 }
 
+/** Notes with unsaved edits (`fkey`s): held by this tab's connections, or kept as drafts in this browser. */
+let unsavedCache: Set<string> | null = null;
+function unsavedNotes(): Set<string> {
+  if (unsavedCache) return unsavedCache;
+  const out = draftNotes();
+  for (const c of RustCollab.live) if (c.holding) out.add(fkey(c.repo, c.path));
+  return (unsavedCache = out);
+}
+
 function renderFile(repo: Workspace, path: string, level: number) {
   const active = current?.repo === repo.id && current.path === path;
+  const unsaved = unsavedNotes().has(fkey(repo.id, path));
   const users = (presence.get(fkey(repo.id, path)) ?? []).filter((u) => u.id !== me.id);
   const items = () => [...rowMenu(repo, parentDir(path), () => renameNoteInline(repo, path), () => void deleteRowByKey(key)), { label: "Copy Link", run: () => void copyNoteLink(repo.id, path) }];
   const name = displayName(path);
@@ -1364,6 +1406,7 @@ function renderFile(repo: Workspace, path: string, level: number) {
     "data-key": key, style: { "--depth": String(level) }, title: path,
   },
     inlineRename?.key === key ? inlineRename.input : h("span", { class: "file-name" }, name),
+    unsaved ? h("span", { class: "unsaved-mark", role: "img", "aria-label": "Unsaved changes", title: "Unsaved changes" }) : null,
     users.length
       ? h("span", { class: "presence-dots", role: "img", "aria-label": `${users.map((u) => u.name).join(", ")} here`, title: users.map((u) => u.name).join(", ") },
           users.slice(0, 4).map((u) => h("span", { class: `pdot${u.kind === "agent" ? " is-agent" : ""}${arrived(`${key}:${u.id}`) ? " arrived" : ""}`, style: { "--c": u.color } })),
@@ -2412,7 +2455,125 @@ function renderParticipants() {
   }), users.length > 6 ? h("span", { class: "avatar avatar-more" }, `+${users.length - 6}`) : null);
 }
 
+/** When the open note was last saved by hand (the status says "Saved" for a moment). */
+let savedFlash = -Infinity;
+
+/** The open "Changes" panel (what Save would send), if any. */
+let changesEl: HTMLElement | null = null;
+
+function closeChanges() {
+  changesEl?.remove();
+  changesEl = null;
+  document.querySelector(".changes-chip")?.setAttribute("aria-expanded", "false");
+}
+
+/** One unsaved change: lines of the saved note (`old`) that are now [from, to) of the editor's text. */
+type Change = { from: number; to: number; old: string; now: string; line: number };
+
+/** The unsaved changes, by blocks of lines: the note as saved → the editor's text. */
+function unsavedChanges(saved: string, text: string): Change[] {
+  const out: Change[] = [];
+  let pos = 0;
+  let line = 1;
+  let cur: Change | null = null;
+  for (const part of diffLines(saved, text)) {
+    if (!part.added && !part.removed) {
+      cur = null;
+      pos += part.value.length;
+      line += part.count ?? 0;
+      continue;
+    }
+    if (!cur) out.push((cur = { from: pos, to: pos, old: "", now: "", line }));
+    if (part.removed) cur.old += part.value;
+    else {
+      cur.now += part.value;
+      cur.to += part.value.length;
+      pos += part.value.length;
+      line += part.count ?? 0;
+    }
+  }
+  return out;
+}
+
+/** Put the saved lines back over a change, as an edit of ours (⌘Z brings the change back). */
+function revertChange(p: RustCollab, c: Change): boolean {
+  const v = p.view as RustEditorView | null;
+  if (!v || v.destroyed || v.readOnly || v.engine.text().slice(c.from, c.to) !== c.now) return false;
+  v.apply(v.engine.replace_range(c.from, c.to, c.old));
+  return true;
+}
+
+/** The header chip's panel: the unsaved changes as diff blocks, each with a revert button, and Revert all (⌘S / :w saves). */
+function toggleChanges(chip: HTMLElement) {
+  if (changesEl) return closeChanges();
+  const p = session?.provider;
+  if (!p) return;
+  const panel = h("div", { class: "changes-pop", role: "dialog", "aria-label": "Unsaved changes" });
+  panel.addEventListener("click", (e) => e.stopPropagation());
+  const fill = () => {
+    const changes = unsavedChanges(p.savedText, p.engine.text());
+    if (!changes.length) {
+      // everything reverted: the note is as saved, but the reverts are edits of ours (held); sent, they change nothing
+      // (dropping them would leave this document apart from the server's)
+      if (p.holding) p.save();
+      return closeChanges();
+    }
+    let added = 0;
+    let removed = 0;
+    const lines = (text: string, cls: "add" | "del") =>
+      text.replace(/\n$/, "").split("\n").map((l) => (cls === "add" ? added++ : removed++, h("span", { class: `dl dl-${cls}` }, (cls === "add" ? "+" : "-") + (l || " "))));
+    const blocks = changes.map((c) =>
+      h("div", { class: "change" },
+        h("div", { class: "change-head" },
+          h("span", { class: "muted" }, `Line ${c.line}`),
+          h("button", { type: "button", class: "icon-btn change-revert", title: "Revert this change", "aria-label": `Revert the change at line ${c.line}`, onclick: () => revertChange(p, c) && fill() }, "↶"),
+        ),
+        h("pre", { class: "diff" }, c.old ? lines(c.old, "del") : null, c.now ? lines(c.now, "add") : null),
+      ),
+    );
+    clear(panel,
+      h("div", { class: "changes-head" },
+        h("span", { class: "changes-title" }, "Not saved yet"),
+        h("span", { class: "changes-count" }, h("span", { class: "add" }, `+${added}`), " ", h("span", { class: "del" }, `−${removed}`)),
+      ),
+      h("div", { class: "changes-body" }, blocks),
+      h("div", { class: "changes-foot" },
+        h("button", {
+          type: "button", class: "quiet-btn changes-revert-all",
+          onclick: () => {
+            // from the last change back, so each one's offsets still hold
+            for (const c of [...changes].reverse()) revertChange(p, c);
+            fill();
+          },
+        }, "Revert all"),
+      ),
+    );
+  };
+  fill();
+  if (!panel.childElementCount) return;
+  document.body.appendChild(panel);
+  const r = chip.getBoundingClientRect();
+  panel.style.top = `${Math.round(r.bottom + 6)}px`;
+  panel.style.right = `${Math.max(12, Math.round(window.innerWidth - r.right))}px`;
+  changesEl = panel;
+  chip.setAttribute("aria-expanded", "true");
+}
+
+/** Save the open note's unsaved edits (⌘S, the Changes panel, Vim's :w). */
+function saveNote() {
+  const p = session?.provider;
+  if (!p) return;
+  const had = p.unsaved;
+  p.save();
+  if (!had) return;
+  savedFlash = performance.now();
+  renderSaveStatus();
+  setTimeout(() => renderSaveStatus(), 1600);
+}
+
 function renderSaveStatus() {
+  // the Changes panel belongs to the chip being redrawn
+  if (changesEl && !session?.provider?.unsaved) closeChanges();
   if (!session) return clear(saveStatusEl);
   const p = session.provider;
   let text: string | (string | HTMLElement)[];
@@ -2428,6 +2589,18 @@ function renderSaveStatus() {
   } else if (session.readOnly) {
     // Read-only GitHub copies say so next to the breadcrumb.
     text = sourceEl.childElementCount ? "" : "Read-only";
+  } else if (p.unsaved) {
+    // Save manually: the edits wait in this browser until saved; the chip opens what Save would send
+    const chip = h("button", { type: "button", class: "changes-chip", title: "Unsaved changes: the others don't see them yet", "aria-haspopup": "dialog", "aria-expanded": "false" },
+      h("span", { class: "unsaved-mark", "aria-hidden": "true" }), "Changes", h("span", { class: "chev", "aria-hidden": "true" }, "▾"));
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleChanges(chip);
+    });
+    text = [chip];
+    cls = "unsaved";
+  } else if (performance.now() - savedFlash < 1500) {
+    text = "Saved";
   } else {
     // Notes save themselves a few seconds after you stop typing, so there's nothing to show while connected.
     text = "";
@@ -2490,6 +2663,8 @@ class Session {
   private banner: HTMLElement | null = null;
   /** Edits kept from a crashed session of this note (before the reload). */
   private kept: KeptEdits | null = null;
+  /** The kept draft this session took to restore (until its "recovered"): put back if the session ends first. */
+  private draft: KeptEdits | null = null;
   everConnected = false;
   ended = false;
   private readonly opened = performance.now();
@@ -2517,7 +2692,7 @@ class Session {
   ) {
     this.localUser = localUser();
     // v2: a prefetched note (a hidden channel) has its engine syncing or synced already
-    const warm = noteSocket && !carry && !keptUnsent(me.id, repo, path) ? noteSocket.take(repo, path) : null;
+    const warm = noteSocket && !carry && !keptUnsent(me.id, repo, path) && !keptDraft(repo, path) ? noteSocket.take(repo, path) : null;
     // (after openFile has made this the session)
     const remember = () => queueMicrotask(() => session === this && !this.ended && saveLastNote(repo, path));
     if (warm?.synced) {
@@ -2563,7 +2738,10 @@ class Session {
       return;
     }
     // edits kept from a session whose engine crashed (before the reload): merged once this one is synced
-    const kept = (this.kept = keptUnsent(me.id, repo, path));
+    // (or the unsaved draft kept when the note last closed: taken, this tab restores it; put back if that fails)
+    const unsent = keptUnsent(me.id, repo, path);
+    if (!unsent) this.draft = takeDraft(repo, path);
+    const kept = (this.kept = unsent ?? this.draft);
     Promise.all([loadCollabEngine(), kept ? importRecover().catch((err: unknown) => (console.warn("The recovery code failed to load.", err), null)) : null]).then(
       ([factory, rec]) => {
         if (this.ended) return;
@@ -2606,11 +2784,17 @@ class Session {
       renderSaveStatus();
     });
     ev.on("saveState", () => renderSaveStatus());
+    ev.on("drafts", () => renderSaveStatus());
     ev.on("awareness", () => renderParticipants());
     ev.on("crashed", (unsent) => this.crashed(unsent));
     ev.on("recovered", (ok, changed) => {
       const kept = this.kept;
+      const draft = this.draft;
+      this.draft = null;
+      // a draft that couldn't be merged stays kept for next time
+      if (!ok && draft) keepDraft(repo, path, draft);
       if (ok) {
+        keepDraft(repo, path, null);
         if (changed) toast("Your unsaved edits from before the reload were restored.");
         if (!kept?.older?.length) return forgetUnsent(me.id, repo, path);
         // an earlier crash's edits that couldn't be merged: kept only to be copied (nothing left to merge)
@@ -2964,9 +3148,12 @@ class Session {
     this.fallback?.();
     const p = this.provider;
     this.provider = null;
-    // v2: kept warm (hidden) as the previous note
-    if (p && noteSocket && !this.failed) noteSocket.release(this.repo, this.path, p);
+    // v2: kept warm (hidden) as the previous note, unless it still has a draft to restore: then it goes, and the
+    // draft back to storage (a warm one would restore it later while the stored copy waits for another tab)
+    if (p && noteSocket && !this.failed && !this.draft) noteSocket.release(this.repo, this.path, p);
     else p?.destroy();
+    if (this.draft) keepDraft(this.repo, this.path, this.draft);
+    this.draft = null;
   }
 }
 

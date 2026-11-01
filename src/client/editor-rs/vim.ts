@@ -59,6 +59,8 @@ export interface VimHost {
    * keeps the caret out of a marker's inside, so Vim steps over it as one piece. Absent: the line start.
    */
   textStart?(pos: number): number;
+  /** Save the note (:w, :wq, :x). */
+  save?(): void;
   /** Something to tell the user ("Pattern not found: x"). */
   message?(text: string): void;
 }
@@ -172,7 +174,8 @@ export class VimCore {
       this.select(this.firstNonBlank(this.lineStartOfLine(t, parseInt(c, 10) - 1)));
       return;
     }
-    if (/^(w|wa|wq|x|q|q!|noh|nohlsearch)$/.test(c)) return; // notes save themselves; nothing to quit
+    if (/^(w|wa|wq|x|up|update)!?$/.test(c)) return void this.h.save?.();
+    if (/^(q|q!|qa|noh|nohlsearch)$/.test(c)) return; // nothing to quit
     if (c) this.h.message?.(`Not an editor command: ${c}`);
   }
 

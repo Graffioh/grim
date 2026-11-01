@@ -71,6 +71,11 @@ export class VimView {
         return span && line && v.lines.length === v.doc.lines.length ? span.from + line.textFrom : pos;
       },
       message: (text) => this.message(text),
+      // a note with Save manually: send the held edits (the app's status follows the collab's "drafts" event)
+      save: () => {
+        v.collab?.save();
+        this.message("Saved");
+      },
     };
     this.core = new VimCore(host);
 

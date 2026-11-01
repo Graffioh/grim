@@ -23,6 +23,8 @@ if (existsSync(new URL("editor_wasm_bg.wasm", pkg))) {
 }
 const t = factory ? test : test.skip;
 installDom();
+// these tests are about live editing: edits go out at once (Save manually off; its own tests are in drafts.test.ts)
+localStorage.setItem("grimoire.manualSave.v1", "0");
 const tick = () => new Promise((r) => setTimeout(r, 5));
 const user = { id: "a", name: "Alice", color: "#d63b3b", kind: "human" };
 
