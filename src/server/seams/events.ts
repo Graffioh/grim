@@ -6,7 +6,8 @@ export type PresenceUser = { id: string; name: string; color: string; kind: stri
 export type AppEvent =
   | { type: "tree"; repo: string }
   | { type: "presence"; repo: string; path: string; users: PresenceUser[] }
-  | { type: "saved"; repo: string; path: string; sha: string }
+  /** `agent`: the commit has an agent's edits (MCP, the shell). */
+  | { type: "saved"; repo: string; path: string; sha: string; agent?: boolean }
   /** The import status of one workspace changed (protocol v2 sockets' `workspace` event). */
   | { type: "workspace"; repo: string; status: "ready" | "importing" | "error"; error?: string };
 

@@ -172,6 +172,8 @@ export interface SavedMsg {
   t: "saved";
   path: string;
   sha: string;
+  /** The commit has an agent's edits (the sidebar marks the note until it's opened). */
+  agent?: boolean;
 }
 
 /** ← The import status (or the title) changed; `removed` is followed by a socket close 4404. */

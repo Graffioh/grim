@@ -205,7 +205,7 @@ export class WorkspaceRuntime implements WorkspaceApi {
       case "presence":
         return this.sockets.updatePresence(e.path);
       case "saved":
-        return this.sockets.broadcast({ t: "saved", path: e.path, sha: e.sha });
+        return this.sockets.broadcast({ t: "saved", path: e.path, sha: e.sha, ...(e.agent ? { agent: true } : {}) });
       case "workspace":
         return this.sockets.broadcast({ t: "workspace", status: e.status, ...(e.error ? { error: e.error } : {}) });
       case "tree": {

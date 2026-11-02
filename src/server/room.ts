@@ -81,6 +81,8 @@ interface Contributor {
   id: string;
   author: Author;
   edits: number;
+  /** An agent (MCP, the shell): its commits tell the sidebar ("saved" events with `agent`). */
+  agent?: boolean;
 }
 
 /** Agents get awareness client ids above the uint32 range that Yjs clients pick theirs from. */
@@ -231,7 +233,7 @@ export class Room {
       if (origin === EXTERNAL) return this.flushPending();
       const who = (origin as { user?: Participant } | null)?.user;
       if (who) {
-        const c = this.contributors.get(who.id) ?? { id: who.id, author: authorOf(who), edits: 0 };
+        const c = this.contributors.get(who.id) ?? { id: who.id, author: authorOf(who), edits: 0, ...(who.kind === "agent" ? { agent: true } : {}) };
         c.edits++;
         this.contributors.set(who.id, c);
         this.stateDirty = true;
@@ -686,7 +688,7 @@ export class Room {
       this.saveMeta();
       this.dirty = this.isDirty();
       this.broadcastStatus();
-      emit({ type: "saved", repo: this.repo, path: this.path, sha: res.sha });
+      emit({ type: "saved", repo: this.repo, path: this.path, sha: res.sha, ...(contributors.some((c) => c.agent) ? { agent: true } : {}) });
       if (verb === "Create") emit({ type: "tree", repo: this.repo });
       return;
     }
@@ -763,7 +765,7 @@ export class Room {
           this.saveMeta();
           this.dirty = this.isDirty();
           this.broadcastStatus();
-          emit({ type: "saved", repo: this.repo, path: this.path, sha: res.sha });
+          emit({ type: "saved", repo: this.repo, path: this.path, sha: res.sha, agent: true });
           if (verb === "Create") emit({ type: "tree", repo: this.repo });
           // what people typed after the write: their own commit, after the quiet period
           if (this.dirty) this.scheduleFlush();

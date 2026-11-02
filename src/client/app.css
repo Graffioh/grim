@@ -64,6 +64,8 @@
   --focus: 0 0 0 2px var(--paper), 0 0 0 4px var(--blue);
   /* soft warm yellow: highlights and warnings (no red anywhere) */
   --warn: #e0a800;
+  /* the agents' purple (the sidebar's mark for a note an agent saved) */
+  --agent-mark: #8b5cf6;
   /* the one red: "Delete account" (irreversible); everything else destructive is ink */
   --red: #c62f28;
   --red-hover: #a8241e;
@@ -119,6 +121,7 @@
   --line-soft: rgba(255, 255, 255, 0.07);
   --blue: #6aaedb;
   --warn: #e0b030;
+  --agent-mark: #a78bfa;
   --red: #e5534b;
   --red-hover: #f06a62;
   --warn-soft: rgba(245, 197, 66, 0.2);
@@ -2775,6 +2778,8 @@ input[type="radio"] {
   background: var(--warn);
 }
 .file-row .unsaved-mark { margin-left: 6px; }
+/* an agent (Claude through MCP, the shell) saved this note since you last opened it */
+.unsaved-mark.is-agent { background: var(--agent-mark); }
 /* the header chip: opens what Save would send */
 .changes-chip {
   display: inline-flex;

@@ -956,7 +956,7 @@ function onSocketEvent(repo: string, e: WorkspaceEventMsg) {
       }
       return onEvent({ type: "presence", repo, path: e.path, users: e.users });
     case "saved":
-      return onEvent({ type: "saved", repo, path: e.path, sha: e.sha });
+      return onEvent({ type: "saved", repo, path: e.path, sha: e.sha, ...(e.agent ? { agent: true } : {}) });
     case "workspace":
       // import status or title: the workspace list says
       return void loadRepos(e.status === "ready");
@@ -994,6 +994,11 @@ function onEvent(e: AppEvent) {
     }
     case "saved":
       history.onSaved(e.repo, e.path);
+      // an agent's edits to a note not open here: marked in the sidebar until it's opened
+      if (e.agent && !(current?.repo === e.repo && current.path === e.path) && !agentEdited.has(fkey(e.repo, e.path))) {
+        agentEdited.add(fkey(e.repo, e.path));
+        renderTree();
+      }
       break;
   }
 }
@@ -1384,18 +1389,22 @@ function renderFolder(repo: Workspace, folder: Folder, level: number): HTMLEleme
   return ul;
 }
 
-/** Notes with unsaved edits (`fkey`s): held by this tab's connections, or kept as drafts in this browser. */
+/** Notes an agent saved since this tab last opened them (`fkey`s): a purple mark in the sidebar. */
+const agentEdited = new Set<string>();
+
+/** Notes with unsaved edits (`fkey`s): this tab's connections whose text differs from the server's, or drafts kept in this browser. */
 let unsavedCache: Set<string> | null = null;
 function unsavedNotes(): Set<string> {
   if (unsavedCache) return unsavedCache;
   const out = draftNotes();
-  for (const c of RustCollab.live) if (c.holding) out.add(fkey(c.repo, c.path));
+  for (const c of RustCollab.live) if (c.unsaved) out.add(fkey(c.repo, c.path));
   return (unsavedCache = out);
 }
 
 function renderFile(repo: Workspace, path: string, level: number) {
   const active = current?.repo === repo.id && current.path === path;
   const unsaved = unsavedNotes().has(fkey(repo.id, path));
+  const byAgent = !unsaved && agentEdited.has(fkey(repo.id, path));
   const users = (presence.get(fkey(repo.id, path)) ?? []).filter((u) => u.id !== me.id);
   const items = () => [...rowMenu(repo, parentDir(path), () => renameNoteInline(repo, path), () => void deleteRowByKey(key)), { label: "Copy Link", run: () => void copyNoteLink(repo.id, path) }];
   const name = displayName(path);
@@ -1407,6 +1416,7 @@ function renderFile(repo: Workspace, path: string, level: number) {
   },
     inlineRename?.key === key ? inlineRename.input : h("span", { class: "file-name" }, name),
     unsaved ? h("span", { class: "unsaved-mark", role: "img", "aria-label": "Unsaved changes", title: "Unsaved changes" }) : null,
+    byAgent ? h("span", { class: "unsaved-mark is-agent", role: "img", "aria-label": "Edited by an agent", title: "Edited by an agent" }) : null,
     users.length
       ? h("span", { class: "presence-dots", role: "img", "aria-label": `${users.map((u) => u.name).join(", ")} here`, title: users.map((u) => u.name).join(", ") },
           users.slice(0, 4).map((u) => h("span", { class: `pdot${u.kind === "agent" ? " is-agent" : ""}${arrived(`${key}:${u.id}`) ? " arrived" : ""}`, style: { "--c": u.color } })),
@@ -2330,6 +2340,7 @@ function openFile(repo: string, path: string) {
   if (session && session.repo === repo && session.path === path && !session.ended) return;
   closeSession();
   current = { repo, path };
+  agentEdited.delete(fkey(repo, path));
   setWorkspace(repo);
   if (!trees.has(repo)) void loadTree(repo);
   const parts = path.split("/");

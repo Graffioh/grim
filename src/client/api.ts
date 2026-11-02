@@ -71,7 +71,7 @@ export interface PresenceUserInfo {
 export type AppEvent =
   | { type: "tree"; repo: string }
   | { type: "presence"; repo: string; path: string; users: PresenceUserInfo[] }
-  | { type: "saved"; repo: string; path: string; sha: string };
+  | { type: "saved"; repo: string; path: string; sha: string; agent?: boolean };
 
 export class ApiError extends Error {
   constructor(

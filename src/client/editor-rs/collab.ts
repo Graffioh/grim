@@ -185,6 +185,9 @@ export class RustCollab extends Emitter<CollabEvents> {
   private held: Uint8Array[] = [];
   /** The server's document as we know it: its sync frames and what we sent (not what's held). */
   private readonly shadow = new Y.Doc();
+  /** What `unsaved` was when the app was last told (checkUnsaved). */
+  private wasUnsaved = false;
+  private unsavedCheck = false;
   /** save() was asked while the connection was down: done once it's synced again. */
   private saveWanted = false;
   private readonly onManualSave = () => {
@@ -247,6 +250,7 @@ export class RustCollab extends Emitter<CollabEvents> {
     this.transmit([updateFrame(update)]);
     this.flush();
     keepDraft(this.repo, this.path, null);
+    this.wasUnsaved = false;
     this.emit("drafts", false);
   }
 
@@ -540,6 +544,8 @@ export class RustCollab extends Emitter<CollabEvents> {
       if (data[0] === 0) return this.crash(new Error(r.error));
     }
     this.send(r.frames);
+    // (the others' edits can make ours moot, or the server's document catch up with the editor's)
+    if (data[0] === MSG_SYNC && this.held.length) this.checkUnsaved();
     if (r.reloaded) this.view?.reload();
     else if (r.patch) this.view?.remotePatch(r.patch);
     if (r.awareness) this.presenceChanged();
@@ -701,14 +707,27 @@ export class RustCollab extends Emitter<CollabEvents> {
   }
 
   private hold(update: Uint8Array): void {
-    const first = !this.held.length;
     this.held.push(update);
-    if (first)
-      queueMicrotask(() => {
-        if (this.destroyed) return;
-        this.emit("drafts", true);
-        draftsChanged();
-      });
+    this.checkUnsaved();
+  }
+
+  /**
+   * Tell the app when `unsaved` flips (the sidebar's mark, the Changes chip). Held frames alone don't count: a
+   * reconnect's step2 always carries the document's delete set, edits or not, and undoing back to the server's text
+   * leaves frames held with nothing to save. Coalesced: once per task, however many frames were held in it.
+   */
+  private checkUnsaved(): void {
+    if (this.unsavedCheck) return;
+    this.unsavedCheck = true;
+    queueMicrotask(() => {
+      this.unsavedCheck = false;
+      if (this.destroyed) return;
+      const now = this.unsaved;
+      if (now === this.wasUnsaved) return;
+      this.wasUnsaved = now;
+      this.emit("drafts", now);
+      draftsChanged();
+    });
   }
 
   private canSend(): boolean {
