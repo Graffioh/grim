@@ -9,7 +9,6 @@ import { isErr } from "../errors.ts";
 import type { Participant } from "../rooms.ts";
 import type { ShellSnapshot, ShellWrite } from "../seams/workspace-host.ts";
 import { isMarkdown, MAX_FILE_BYTES, type FileMeta } from "../store/types.ts";
-import { formatAgentMarkdown, isMarkdownPath } from "../mdformat.ts";
 
 type ReadFileOptions = { encoding?: BufferEncoding | null };
 type WriteFileOptions = { encoding?: BufferEncoding };
@@ -115,23 +114,6 @@ interface Pending {
   content: string;
   /** Text appended so far, while this command has only appended (applied at the live end, not as a diff). */
   appended: string | null;
-}
-
-/** Format the Markdown blocks the agent wrote (mdformat.ts; an append: within what it appended). */
-async function formatPending(p: Pending): Promise<void> {
-  if (!isMarkdownPath(p.path)) return;
-  try {
-    if (p.appended !== null) {
-      const appended = await formatAgentMarkdown(null, p.appended);
-      if (appended === p.appended) return;
-      p.content = p.content.slice(0, p.content.length - p.appended.length) + appended;
-      p.appended = appended;
-      return;
-    }
-    p.content = await formatAgentMarkdown(p.base, p.content);
-  } catch (e) {
-    console.warn("shell: couldn't format an agent's Markdown", e);
-  }
 }
 
 interface RepoIndex {
@@ -511,8 +493,6 @@ export class NotesFs implements IFileSystem {
     for (const batch of batches.values()) {
       const repo = batch[0]![1].repo;
       const shown = (p: Pending) => `${WORKSPACE}/${repo.id}/${p.path}`;
-      // hard-wrapped Markdown reads as broken lines in Grim's editor: the agent's own blocks are formatted (mdformat.ts)
-      for (const [, p] of batch) await formatPending(p);
       const writes: ShellWrite[] = batch.map(([, p]) => ({ path: p.path, base: p.base, content: p.content, appended: p.appended }));
       let results: (string | null)[];
       try {

@@ -36,7 +36,7 @@ const MAX_COUNTED = 50;
 
 export function instructions(): string {
   const host = new URL(config.publicUrl).host;
-  return `Grim (${host}) is a shared, multiplayer Markdown notebook: people edit notes live in the browser, and every note is a Markdown file in a Git repo. Notes live in workspaces (one Git repo each). Grim's editor shows every line of a file as a line of its own: write each paragraph and list item on one line (don't hard-wrap; wrapped lines you write are joined back).
+  return `Grim (${host}) is a shared, multiplayer Markdown notebook: people edit notes live in the browser, and every note is a Markdown file in a Git repo. Notes live in workspaces (one Git repo each). Grim's editor shows every line of a file as a line of its own, so don't hard-wrap: write each paragraph and list item on one line, and keep them short (split a long paragraph into a few short ones or a list).
 
 Three tools:
 - \`list_workspaces\`: your workspaces (id, title, access, note count). Any other workspace whose id you're given (it's the part after /app/ in a ${host} link) works too.
